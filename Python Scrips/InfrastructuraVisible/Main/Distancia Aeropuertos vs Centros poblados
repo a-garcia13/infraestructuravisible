@@ -1,0 +1,146 @@
+import pandas as pd
+import numpy as np
+import csv
+import json
+from math import radians, cos, sin, asin, sqrt
+import os
+
+class Airport:
+    def __init__(self, name, longitud, latitud, tipo, sigla):
+        self.sigla = sigla
+        self.name = name
+        self.longitud = longitud
+        self.latitud = latitud
+        self.tipo = tipo
+
+class City:
+    def __init__(self, name, longitud, latitud, cod_centro_poblado):
+        self.name = name
+        self.cod_centro_poblado = cod_centro_poblado
+        self.longitud = longitud
+        self.latitud = latitud
+        self.aeropuerto_mas_cercano = ""
+        self.distancia = 999999
+        self.cobertura = False
+        self.aerodromo_mas_cercano = ""
+        self.distancia_aerodromo = 999999
+        self.aeropuerto_regional_mas_cercano = ""
+        self.distancia_aeropuerto_regional = 999999
+        self.aeropuerto_nacional_mas_cercano = ""
+        self.distancia_aeropuerto_nacional = 999999
+        self.aeropuerto_internacional_mas_cercano = ""
+        self.distancia_aeropuerto_internacional = 999999
+        self.tipo_de_cobertura = "Sin cobertura"
+
+    def get_distance_from_point(self, long, lat):
+        """
+        Calculate the great circle distance between two points
+        on the earth (specified in decimal degrees)
+        """
+        # convert decimal degrees to radians
+        lon1, lat1, lon2, lat2 = map(radians, [self.longitud, self.latitud, long, lat])
+
+        # haversine formula
+        dlon = lon2 - lon1
+        dlat = lat2 - lat1
+        a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+        c = 2 * asin(sqrt(a))
+        r = 6371  # Radius of earth in kilometers. Use 3956 for miles
+        return c * r
+
+    def check_short_distance(self, name, dist, categoria):
+        if dist > 0:
+            if self.aeropuerto_mas_cercano == "":
+                self.aeropuerto_mas_cercano = name
+                self.distancia = dist
+                if self.distancia <= 40:
+                    self.cobertura = True
+            elif self.distancia > dist:
+                self.aeropuerto_mas_cercano = name
+                self.distancia = dist
+                if self.distancia <= 40:
+                    self.cobertura = True
+            if self.distancia_aerodromo > dist and categoria == "Aeródromo":
+                self.aerodromo_mas_cercano = name
+                self.distancia_aerodromo = dist
+            elif self.distancia_aeropuerto_regional > dist and categoria == "Regional":
+                self.aeropuerto_regional_mas_cercano = name
+                self.distancia_aeropuerto_regional = dist
+            elif self.distancia_aeropuerto_nacional > dist and categoria == "Nacional":
+                self.aeropuerto_nacional_mas_cercano = name
+                self.distancia_aeropuerto_nacional = dist
+            elif self.distancia_aeropuerto_internacional > dist and categoria == "Internacional":
+                self.aeropuerto_internacional_mas_cercano = name
+                self.distancia_aeropuerto_internacional = dist
+            if self.distancia_aerodromo <= 40 and self.tipo_de_cobertura == "Sin cobertura":
+                self.tipo_de_cobertura = "Aeródromo"
+            if self.distancia_aeropuerto_regional <= 40 and (self.tipo_de_cobertura == "Sin cobertura" or self.tipo_de_cobertura == "Aeródromo"):
+                self.tipo_de_cobertura = "Regional"
+            if self.distancia_aeropuerto_nacional <= 40 and (self.tipo_de_cobertura == "Sin cobertura" or self.tipo_de_cobertura == "Aeródromo" or self.tipo_de_cobertura == "Regional"):
+                self.tipo_de_cobertura = "Nacional"
+            if self.distancia_aeropuerto_internacional <= 40 and self.tipo_de_cobertura != "Internacional":
+                self.tipo_de_cobertura = "Internacional"
+
+print(os.path.dirname(__file__))
+home = os.getcwd()
+file = "aeropuertos.csv"
+result = os.path.join(home, file)
+with open(result, 'r') as f:
+    airports_file = pd.read_csv(f, sep="|")
+
+file = "centrospoblados.csv"
+result = os.path.join(home, file)
+with open(result, 'r') as f:
+    cities_file = pd.read_csv(f, sep="|")
+
+cities_file['Longitud'] = cities_file['Longitud'].astype('float')
+cities_file['Latitud'] = cities_file['Latitud'].astype('float')
+airports_file['latitud'] = airports_file['latitud'].astype('float')
+airports_file['latitud'] = airports_file['latitud'].astype('float')
+
+airports = {}
+cities = {}
+
+for index, row in airports_file.iterrows():
+    airport_name = "" + row['sigla']
+    new_airport = Airport(row['nombre'], row['longitud'], row['latitud'], row['categoria'], row['sigla'])
+    airports[airport_name] = new_airport
+
+for index, row in cities_file.iterrows():
+    city_name = "" + str(row['Código Centro Poblado'])
+    new_city = City(row['Nombre Centro Poblado'], row['Longitud'], row['Latitud'], row['Código Centro Poblado'])
+    cities[city_name] = new_city
+
+# Creating an empty Dataframe with column names only
+columns_names = []
+for key, value in airports.items():
+    columns_names.append(key)
+
+distanceMatrix = pd.DataFrame(columns=columns_names)
+
+lower_distance = pd.DataFrame(columns=['Nombre centro poblado', 'Aeropuerto', 'Distancia(Km)', 'Cobertura', 'Aerodromo',
+                                       'D_Aerodromo','Regional', 'D_Regional', 'Nacional', 'D_Nacional',
+                                       'Internacional','D_Internacional', 'Tipo_Cobertura'])
+
+# Filling matrix distances
+for key, value in cities.items():
+    distances = []
+    for k, v in airports.items():
+        dist_instance = value.get_distance_from_point(v.longitud, v.latitud)
+        value.check_short_distance(k, dist_instance, v.tipo)
+        distances.append(dist_instance)
+    distanceMatrix.loc[key] = distances
+
+for key, value in cities.items():
+    lower_distance.loc[key] = [value.name, value.aeropuerto_mas_cercano, value.distancia, value.cobertura,
+                               value.aerodromo_mas_cercano, value.distancia_aerodromo,
+                               value.aeropuerto_regional_mas_cercano, value.distancia_aeropuerto_regional,
+                               value.aeropuerto_nacional_mas_cercano, value.distancia_aeropuerto_nacional,
+                               value.aeropuerto_internacional_mas_cercano, value.distancia_aeropuerto_internacional,
+                               value.tipo_de_cobertura]
+
+print(distanceMatrix)
+print(lower_distance)
+
+distanceMatrix.to_csv("distancematrix.csv", sep="|", encoding='utf-8-sig')
+lower_distance.to_csv("lower_distance.csv", sep="|", encoding='utf-8-sig')
